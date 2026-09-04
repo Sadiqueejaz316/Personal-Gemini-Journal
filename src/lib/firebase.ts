@@ -3,6 +3,10 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  sendPasswordResetEmail,
   signOut as fbSignOut,
   onAuthStateChanged,
   User,
@@ -70,6 +74,109 @@ export function cleanPayloadForFirestore<T>(data: T): T {
     return cleaned as T;
   }
   return data;
+}
+
+/**
+ * Helper to translate Firebase Auth error codes into clear, actionable messages
+ */
+export function formatAuthErrorMessage(error: any): string {
+  if (!error) return 'An unexpected authentication error occurred.';
+  const code = error.code || '';
+  
+  switch (code) {
+    case 'auth/email-already-in-use':
+      return 'An account with this email already exists. Please sign in instead.';
+    case 'auth/invalid-email':
+      return 'The email address entered is not valid.';
+    case 'auth/weak-password':
+      return 'Password must be at least 6 characters long.';
+    case 'auth/user-not-found':
+      return 'No registered account found with this email. Please check your spelling or sign up.';
+    case 'auth/wrong-password':
+      return 'Incorrect password. Please verify your credentials or reset your password.';
+    case 'auth/invalid-credential':
+      return 'Invalid email or password. Please verify your credentials and try again.';
+    case 'auth/user-disabled':
+      return 'This user account has been disabled. Please contact support.';
+    case 'auth/too-many-requests':
+      return 'Access temporarily restricted due to multiple failed attempts. Please wait a moment or reset your password.';
+    case 'auth/popup-closed-by-user':
+      return 'Sign-in popup was closed before completing. Please try again.';
+    case 'auth/popup-blocked':
+      return 'Popup was blocked by your browser. Please allow popups for this site.';
+    case 'auth/operation-not-allowed':
+      return 'Email/Password sign-in provider is not enabled in Firebase Console.';
+    default:
+      return error.message || 'Authentication failed. Please try again.';
+  }
+}
+
+/**
+ * Sign in using Email & Password
+ */
+export async function signInWithEmailPassword(email: string, password: string): Promise<User> {
+  const cleanEmail = email.trim().toLowerCase();
+  const result = await signInWithEmailAndPassword(auth, cleanEmail, password);
+  const user = result.user;
+
+  // Update profile metadata in Firestore with defensive sanitization
+  const userRef = doc(db, 'users', user.uid);
+  const profilePayload: Partial<UserProfile> = {
+    uid: user.uid,
+    email: user.email,
+    displayName: user.displayName || user.email?.split('@')[0] || 'Mindful Author',
+    photoURL: user.photoURL || '',
+    lastLoginAt: new Date().toISOString(),
+  };
+
+  await setDoc(userRef, cleanPayloadForFirestore(profilePayload), { merge: true });
+  return user;
+}
+
+/**
+ * Sign up / Create Account using Email & Password
+ */
+export async function signUpWithEmailPassword(
+  email: string,
+  password: string,
+  displayName?: string
+): Promise<User> {
+  const cleanEmail = email.trim().toLowerCase();
+  const trimmedName = displayName?.trim() || cleanEmail.split('@')[0] || 'Mindful Author';
+
+  const result = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+  const user = result.user;
+
+  // Update auth profile displayName
+  if (trimmedName) {
+    try {
+      await updateProfile(user, { displayName: trimmedName });
+    } catch (profileErr) {
+      console.warn('Could not update Firebase Auth profile display name:', profileErr);
+    }
+  }
+
+  // Create user profile in Firestore
+  const userRef = doc(db, 'users', user.uid);
+  const profilePayload: Partial<UserProfile> = {
+    uid: user.uid,
+    email: user.email,
+    displayName: trimmedName,
+    photoURL: user.photoURL || '',
+    createdAt: new Date().toISOString(),
+    lastLoginAt: new Date().toISOString(),
+  };
+
+  await setDoc(userRef, cleanPayloadForFirestore(profilePayload), { merge: true });
+  return user;
+}
+
+/**
+ * Send password reset email
+ */
+export async function sendResetPasswordEmail(email: string): Promise<void> {
+  const cleanEmail = email.trim().toLowerCase();
+  await sendPasswordResetEmail(auth, cleanEmail);
 }
 
 /**

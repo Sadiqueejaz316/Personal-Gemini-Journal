@@ -1,6 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth, signInWithGoogle, signOutUser, subscribeToUserEntries, saveJournalEntry } from './lib/firebase';
+import {
+  auth,
+  signInWithGoogle,
+  signInWithEmailPassword,
+  signUpWithEmailPassword,
+  sendResetPasswordEmail,
+  formatAuthErrorMessage,
+  signOutUser,
+  subscribeToUserEntries,
+  saveJournalEntry,
+} from './lib/firebase';
 import { UserProfile, JournalEntry } from './types';
 import { Navbar } from './components/Navbar';
 import { AuthLanding } from './components/AuthLanding';
@@ -10,7 +20,7 @@ import { ThreatModelModal } from './components/ThreatModelModal';
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [isProcessingAuth, setIsProcessingAuth] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
   // Firestore Entries
@@ -25,7 +35,7 @@ export default function App() {
         const profile: UserProfile = {
           uid: user.uid,
           email: user.email,
-          displayName: user.displayName || 'Anonymous Explorer',
+          displayName: user.displayName || user.email?.split('@')[0] || 'Mindful Author',
           photoURL: user.photoURL,
         };
         setCurrentUser(profile);
@@ -67,16 +77,59 @@ export default function App() {
   }, [currentUser?.uid]);
 
   // Handle Google Sign-in
-  const handleSignIn = async () => {
+  const handleGoogleSignIn = async () => {
     try {
-      setIsSigningIn(true);
+      setIsProcessingAuth(true);
       setAuthError(null);
       await signInWithGoogle();
     } catch (err: any) {
       console.error('Google Sign-in failed:', err);
-      setAuthError(err.message || 'Failed to sign in with Google. Please check your popup permissions.');
+      setAuthError(formatAuthErrorMessage(err));
     } finally {
-      setIsSigningIn(false);
+      setIsProcessingAuth(false);
+    }
+  };
+
+  // Handle Email & Password Sign-in
+  const handleEmailSignIn = async (email: string, pass: string) => {
+    try {
+      setIsProcessingAuth(true);
+      setAuthError(null);
+      await signInWithEmailPassword(email, pass);
+    } catch (err: any) {
+      console.error('Email Sign-in failed:', err);
+      setAuthError(formatAuthErrorMessage(err));
+    } finally {
+      setIsProcessingAuth(false);
+    }
+  };
+
+  // Handle Email & Password Sign-up
+  const handleEmailSignUp = async (email: string, pass: string, displayName?: string) => {
+    try {
+      setIsProcessingAuth(true);
+      setAuthError(null);
+      await signUpWithEmailPassword(email, pass, displayName);
+    } catch (err: any) {
+      console.error('Email Sign-up failed:', err);
+      setAuthError(formatAuthErrorMessage(err));
+    } finally {
+      setIsProcessingAuth(false);
+    }
+  };
+
+  // Handle Password Reset Request
+  const handleResetPassword = async (email: string) => {
+    try {
+      setIsProcessingAuth(true);
+      setAuthError(null);
+      await sendResetPasswordEmail(email);
+    } catch (err: any) {
+      console.error('Password reset email failed:', err);
+      setAuthError(formatAuthErrorMessage(err));
+      throw err;
+    } finally {
+      setIsProcessingAuth(false);
     }
   };
 
@@ -139,9 +192,13 @@ export default function App() {
       {/* Main Content Area */}
       {!currentUser ? (
         <AuthLanding
-          onSignIn={handleSignIn}
-          isLoading={isSigningIn}
+          onSignInWithGoogle={handleGoogleSignIn}
+          onSignInWithEmail={handleEmailSignIn}
+          onSignUpWithEmail={handleEmailSignUp}
+          onResetPassword={handleResetPassword}
+          isLoading={isProcessingAuth}
           errorMessage={authError}
+          onClearError={() => setAuthError(null)}
         />
       ) : (
         <Dashboard

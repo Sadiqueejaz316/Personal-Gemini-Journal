@@ -125,7 +125,21 @@ service cloud.firestore {
             <div className="space-y-2 text-xs text-stone-300">
               <div className="p-3 rounded-lg bg-stone-950/70 border border-stone-800 space-y-1">
                 <span className="font-semibold text-stone-100 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Test Case 1: Google OAuth Authentication
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Test Case 1: Email/Password Sign-Up &amp; Sign-In
+                </span>
+                <p className="text-stone-400">Navigate to &ldquo;Create Account&rdquo; &rarr; Enter name, valid email, and 6+ char password &rarr; Submit &rarr; Verify session initialized &amp; user doc created at <code className="text-amber-300 font-mono">/users/{'{uid}'}</code> &rarr; Sign out &rarr; Re-authenticate using &ldquo;Sign In&rdquo; tab with credentials &rarr; Verify instant dashboard access.</p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-stone-950/70 border border-stone-800 space-y-1">
+                <span className="font-semibold text-stone-100 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Test Case 2: Password Reset Recovery Flow
+                </span>
+                <p className="text-stone-400">On Sign In tab &rarr; Click &ldquo;Forgot password?&rdquo; &rarr; Enter email address &rarr; Click &ldquo;Send Recovery Email&rdquo; &rarr; Confirm success confirmation banner is displayed with zero crashes.</p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-stone-950/70 border border-stone-800 space-y-1">
+                <span className="font-semibold text-stone-100 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Test Case 3: Google Federated OAuth Authentication
                 </span>
                 <p className="text-stone-400">Click &ldquo;Sign in with Google&rdquo; &rarr; Complete OAuth popup &rarr; Confirm profile reflects authenticated UID in Firestore at <code className="text-amber-300 font-mono">/users/{'{uid}'}</code>.</p>
               </div>
