@@ -1,21 +1,47 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Match any document in the user's isolated document tree
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      
-      match /entries/{entryId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
-      
-      match /interactions/{interactionId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
+    
+    // Check if authenticated user has admin privileges
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.admin == true ||
+        (request.auth.token.email != null && request.auth.token.email.lower() == 'mohammad.ejaz3114@gmail.com') ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
 
-      match /{allSubpaths=**} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+    // Check if caller is the owner of the document path
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // User Profile Metadata (/users/{userId})
+    // Admins may read, create, and update profile metadata for user directory governance.
+    // Normal users can read and write only their own profile metadata and cannot self-elevate to admin.
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAdmin() || (isOwner(userId) && (!('role' in request.resource.data) || request.resource.data.role != 'admin'));
+      allow update: if isAdmin() || (isOwner(userId) && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role || request.resource.data.role != 'admin'));
+      allow delete: if isOwner(userId) || isAdmin();
+      
+      // Journal Entries: STRICT OWNER ISOLATION ONLY
+      // Admins CANNOT read or write another user's journal entries.
+      match /entries/{entryId} {
+        allow read, write: if isOwner(userId);
       }
+      
+      // Interactions / Chat: STRICT OWNER ISOLATION ONLY
+      match /interactions/{interactionId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Privacy-Safe Aggregated Analytics Collection
+    match /analytics/{docId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
     }
   }
 }
+

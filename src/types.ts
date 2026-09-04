@@ -1,8 +1,13 @@
+export type UserRole = 'user' | 'admin';
+export type AppView = 'journal' | 'admin';
+
 export interface UserProfile {
   uid: string;
   email: string | null;
   displayName: string | null;
   photoURL: string | null;
+  role?: UserRole;
+  entryCount?: number;
   createdAt?: string;
   lastLoginAt?: string;
 }
@@ -45,6 +50,7 @@ export interface GeminiChatPayload {
   }>;
   systemInstruction?: string;
   contextText?: string;
+  mood?: string;
 }
 
 export interface GeminiSummarizePayload {
@@ -56,3 +62,51 @@ export interface GeminiBrainstormPayload {
   content: string;
   focusArea?: 'reframe' | 'action_items' | 'philosophical' | 'creative';
 }
+
+export interface AdminTelemetry {
+  status: 'healthy' | 'degraded' | 'unavailable';
+  uptimeSeconds: number;
+  requests: {
+    total: number;
+    successful: number;
+    failed: number;
+  };
+  latency: {
+    averageMs: number;
+    p95Ms?: number;
+  };
+  models: Array<{
+    model: string;
+    requests: number;
+    successes: number;
+    failures: number;
+    fallbackCount: number;
+  }>;
+  fallbackLadder: {
+    totalFallbacks: number;
+    byModel: Record<string, number>;
+  };
+}
+
+export interface UserDirectoryItem {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  createdAt?: string;
+  lastLoginAt?: string;
+  entryCount: number;
+  role: UserRole;
+  status: 'active' | 'inactive';
+}
+
+export interface MoodAnalytics {
+  gratitude: number;
+  focus: number;
+  stress: number;
+  optimism: number;
+  challenging: number;
+  calm: number;
+  totalSamples: number;
+  updatedAt: string;
+}
+

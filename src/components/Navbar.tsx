@@ -1,9 +1,12 @@
 import React from 'react';
-import { Sparkles, ShieldCheck, LogOut, Plus, BookOpen, Lock, Terminal } from 'lucide-react';
-import { UserProfile } from '../types';
+import { Sparkles, ShieldCheck, LogOut, Plus, BookOpen, Lock, Terminal, Shield } from 'lucide-react';
+import { UserProfile, AppView } from '../types';
 
 interface NavbarProps {
   user: UserProfile | null;
+  currentView?: AppView;
+  isAdmin?: boolean;
+  onToggleAdminView?: () => void;
   onSignOut: () => void;
   onNewEntry: () => void;
   onOpenSecurityModal: () => void;
@@ -11,6 +14,9 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   user,
+  currentView = 'journal',
+  isAdmin = false,
+  onToggleAdminView,
   onSignOut,
   onNewEntry,
   onOpenSecurityModal,
@@ -37,7 +43,25 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Action Controls */}
         <div className="flex items-center gap-2.5">
-          {user && (
+          
+          {/* Admin Navigation Button (Only shown if verified admin) */}
+          {user && isAdmin && onToggleAdminView && (
+            <button
+              id="admin-nav-btn"
+              onClick={onToggleAdminView}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-all border ${
+                currentView === 'admin'
+                  ? 'bg-amber-500 text-stone-950 border-amber-400 shadow-sm'
+                  : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/40'
+              }`}
+              title={currentView === 'admin' ? 'Switch back to Journal' : 'Open Admin Telemetry Dashboard'}
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span>{currentView === 'admin' ? '📖 Journal Workspace' : '🛡️ Admin'}</span>
+            </button>
+          )}
+
+          {user && currentView === 'journal' && (
             <button
               id="new-reflection-navbar-btn"
               onClick={onNewEntry}
@@ -99,3 +123,4 @@ export const Navbar: React.FC<NavbarProps> = ({
     </header>
   );
 };
+

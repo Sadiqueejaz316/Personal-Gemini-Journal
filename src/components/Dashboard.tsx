@@ -78,13 +78,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isJournalExpanded, setIsJournalExpanded] = useState(true);
 
-  // Auto scroll chat
-  const chatBottomRef = useRef<HTMLDivElement>(null);
+  // Local draft inputs for responsive editing without auto-scroll jumps
+  const [localTitle, setLocalTitle] = useState(activeEntry?.title || '');
+  const [localContent, setLocalContent] = useState(activeEntry?.content || '');
+  const titleDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const contentDebounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Synchronize local input states when active entry changes
   useEffect(() => {
-    if (activeTab === 'chat') {
-      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setLocalTitle(activeEntry?.title || '');
+    setLocalContent(activeEntry?.content || '');
+  }, [activeEntry?.id]);
+
+  // Chat message container ref & controlled scroll (strictly inner container, never page viewport)
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const prevMessagesLengthRef = useRef<number>(activeEntry?.messages?.length || 0);
+
+  useEffect(() => {
+    const currentLength = activeEntry?.messages?.length || 0;
+    if (activeTab === 'chat' && chatContainerRef.current) {
+      if (currentLength > prevMessagesLengthRef.current) {
+        chatContainerRef.current.scrollTo({
+          top: chatContainerRef.current.scrollHeight,
+          behavior: 'smooth',
+        });
+      }
     }
-  }, [activeEntry?.messages, activeTab]);
+    prevMessagesLengthRef.current = currentLength;
+  }, [activeEntry?.messages?.length, activeTab]);
 
   // Filtered entries
   const filteredEntries = entries.filter((e) => {
@@ -114,6 +135,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
       setSaveStatus('error');
       setErrorMessage('Failed to save to Firestore. Please click Retry.');
     }
+  };
+
+  // Debounced title update handler
+  const handleTitleChange = (newTitle: string) => {
+    setLocalTitle(newTitle);
+    if (titleDebounceRef.current) clearTimeout(titleDebounceRef.current);
+    titleDebounceRef.current = setTimeout(() => {
+      handleUpdateActiveEntry({ title: newTitle });
+    }, 400);
+  };
+
+  // Debounced content scratchpad update handler
+  const handleContentChange = (newContent: string) => {
+    setLocalContent(newContent);
+    if (contentDebounceRef.current) clearTimeout(contentDebounceRef.current);
+    contentDebounceRef.current = setTimeout(() => {
+      handleUpdateActiveEntry({ content: newContent });
+    }, 400);
   };
 
   // Send message to Gemini
@@ -494,8 +533,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <input
                       id="entry-title-input"
                       type="text"
-                      value={activeEntry.title || ''}
-                      onChange={(e) => handleUpdateActiveEntry({ title: e.target.value })}
+                      value={localTitle}
+                      onChange={(e) => handleTitleChange(e.target.value)}
+                      onBlur={() => {
+                        if (titleDebounceRef.current) clearTimeout(titleDebounceRef.current);
+                        handleUpdateActiveEntry({ title: localTitle });
+                      }}
                       placeholder="Title this reflection..."
                       className="text-lg sm:text-xl font-bold font-serif text-stone-100 bg-transparent border-b border-transparent hover:border-stone-700 focus:border-amber-500/60 focus:outline-none w-full px-1 py-0.5 transition-colors"
                     />
@@ -648,8 +691,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <div className="p-3">
                         <textarea
                           id="journal-scratchpad-input"
-                          value={activeEntry.content || ''}
-                          onChange={(e) => handleUpdateActiveEntry({ content: e.target.value })}
+                          value={localContent}
+                          onChange={(e) => handleContentChange(e.target.value)}
+                          onBlur={() => {
+                            if (contentDebounceRef.current) clearTimeout(contentDebounceRef.current);
+                            handleUpdateActiveEntry({ content: localContent });
+                          }}
                           placeholder="Write your raw thoughts, daily log, experiences, or reflections here..."
                           rows={3}
                           className="w-full bg-transparent text-xs sm:text-sm text-stone-200 placeholder-stone-500 focus:outline-none resize-y leading-relaxed font-sans"
@@ -659,7 +706,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
 
                   {/* Multi-turn Chat Stream */}
-                  <div className="flex-1 overflow-y-auto max-h-[420px] space-y-4 pr-1">
+                  <div ref={chatContainerRef} className="flex-1 overflow-y-auto max-h-[420px] space-y-4 pr-1">
                     {(!activeEntry.messages || activeEntry.messages.length === 0) ? (
                       <div className="p-8 text-center space-y-3 bg-stone-950/40 rounded-xl border border-stone-800/60">
                         <div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
@@ -733,7 +780,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <span>Gemini is reflecting on your input...</span>
                       </div>
                     )}
-                    <div ref={chatBottomRef} />
                   </div>
 
                   {/* Reflection Starter Inspiration Chips */}

@@ -56,7 +56,25 @@ export const AuthLanding: React.FC<AuthLandingProps> = ({
     setMode(newMode);
     setLocalValidationWarning(null);
     setResetSuccessMessage(null);
+    if (newMode === 'signup' && password && !confirmPassword) {
+      setConfirmPassword(password);
+    }
     if (onClearError) onClearError();
+  };
+
+  const handleQuickCreateAccount = async () => {
+    if (!email.trim() || !password) {
+      handleModeChange('signup');
+      return;
+    }
+    if (password.length < 6) {
+      setLocalValidationWarning('Password must be at least 6 characters.');
+      handleModeChange('signup');
+      return;
+    }
+    setLocalValidationWarning(null);
+    if (onClearError) onClearError();
+    await onSignUpWithEmail(email.trim(), password, displayName.trim());
   };
 
   const handleEmailAuthSubmit = async (e: React.FormEvent) => {
@@ -175,28 +193,41 @@ export const AuthLanding: React.FC<AuthLandingProps> = ({
           {errorMessage && (
             <div
               id="auth-error-banner"
-              className="p-3.5 rounded-xl bg-red-950/70 border border-red-800/90 text-red-200 text-xs flex items-start gap-2.5"
+              className="p-4 rounded-xl bg-red-950/80 border border-red-800 text-red-200 text-xs flex items-start gap-3"
             >
-              <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-              <div className="space-y-1.5 flex-1">
-                <span className="font-semibold block text-red-300">Authentication Error</span>
+              <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+              <div className="space-y-2 flex-1">
+                <span className="font-semibold block text-red-300">Authentication Notice</span>
                 <p className="leading-snug">{errorMessage}</p>
                 {mode === 'signin' && (
-                  <div className="pt-1 flex flex-wrap items-center gap-2 text-[11px]">
+                  <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    {email.trim() && password ? (
+                      <button
+                        type="button"
+                        onClick={handleQuickCreateAccount}
+                        disabled={isLoading}
+                        className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                      >
+                        <User className="w-3.5 h-3.5" />
+                        <span>Create Account with entered details</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleModeChange('signup')}
+                        className="px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 font-medium text-xs transition-colors"
+                      >
+                        Switch to Create Account
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => handleModeChange('signup')}
-                      className="underline font-medium text-amber-300 hover:text-amber-200 transition-colors"
+                      onClick={onSignInWithGoogle}
+                      disabled={isLoading}
+                      className="px-3 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 border border-stone-700 text-stone-200 text-xs transition-colors flex items-center justify-center gap-1.5"
                     >
-                      Need to create an account first?
-                    </button>
-                    <span className="text-stone-500">•</span>
-                    <button
-                      type="button"
-                      onClick={() => handleModeChange('forgot')}
-                      className="underline font-medium text-amber-300 hover:text-amber-200 transition-colors"
-                    >
-                      Reset password
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Sign in with Google</span>
                     </button>
                   </div>
                 )}
@@ -247,7 +278,11 @@ export const AuthLanding: React.FC<AuthLandingProps> = ({
                     id="auth-signup-name"
                     type="text"
                     value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
+                    onChange={(e) => {
+                      setDisplayName(e.target.value);
+                      if (localValidationWarning) setLocalValidationWarning(null);
+                      if (onClearError) onClearError();
+                    }}
                     placeholder="e.g. Alex Rivera"
                     autoComplete="name"
                     disabled={isLoading}
@@ -274,7 +309,11 @@ export const AuthLanding: React.FC<AuthLandingProps> = ({
                   type="email"
                   required
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (localValidationWarning) setLocalValidationWarning(null);
+                    if (onClearError) onClearError();
+                  }}
                   placeholder="name@example.com"
                   autoComplete="email"
                   disabled={isLoading}
@@ -313,7 +352,11 @@ export const AuthLanding: React.FC<AuthLandingProps> = ({
                     type={showPassword ? 'text' : 'password'}
                     required
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (localValidationWarning) setLocalValidationWarning(null);
+                      if (onClearError) onClearError();
+                    }}
                     placeholder="••••••••"
                     autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                     disabled={isLoading}
@@ -355,7 +398,11 @@ export const AuthLanding: React.FC<AuthLandingProps> = ({
                     type={showConfirmPassword ? 'text' : 'password'}
                     required
                     value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      if (localValidationWarning) setLocalValidationWarning(null);
+                      if (onClearError) onClearError();
+                    }}
                     placeholder="••••••••"
                     autoComplete="new-password"
                     disabled={isLoading}

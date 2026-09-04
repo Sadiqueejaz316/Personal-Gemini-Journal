@@ -10,15 +10,20 @@ import {
   signOutUser,
   subscribeToUserEntries,
   saveJournalEntry,
+  checkAdminStatus,
 } from './lib/firebase';
-import { UserProfile, JournalEntry } from './types';
+import { UserProfile, JournalEntry, AppView, UserRole } from './types';
 import { Navbar } from './components/Navbar';
 import { AuthLanding } from './components/AuthLanding';
 import { Dashboard } from './components/Dashboard';
+import { AdminDashboard } from './components/AdminDashboard';
 import { ThreatModelModal } from './components/ThreatModelModal';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [rawAuthUser, setRawAuthUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [currentView, setCurrentView] = useState<AppView>('journal');
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isProcessingAuth, setIsProcessingAuth] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -30,17 +35,25 @@ export default function App() {
 
   // Listen to Firebase Auth state
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user: User | null) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user: User | null) => {
+      setRawAuthUser(user);
       if (user) {
+        // Authoritatively check admin status
+        const adminCheck = await checkAdminStatus(user);
+        setIsAdmin(adminCheck.isAdmin);
+
         const profile: UserProfile = {
           uid: user.uid,
           email: user.email,
           displayName: user.displayName || user.email?.split('@')[0] || 'Mindful Author',
           photoURL: user.photoURL,
+          role: adminCheck.isAdmin ? 'admin' : 'user',
         };
         setCurrentUser(profile);
       } else {
         setCurrentUser(null);
+        setIsAdmin(false);
+        setCurrentView('journal');
         setEntries([]);
         setActiveEntryId(null);
       }
@@ -49,6 +62,13 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
+
+  // Ensure non-admin users cannot remain on admin view
+  useEffect(() => {
+    if (currentView === 'admin' && !isAdmin) {
+      setCurrentView('journal');
+    }
+  }, [currentView, isAdmin]);
 
   // Subscribe to Firestore user-isolated entries
   useEffect(() => {
@@ -160,8 +180,11 @@ export default function App() {
     };
 
     try {
-      await saveJournalEntry(newEntry);
+      await saveJournalEntry(newEntry, true);
       setActiveEntryId(newId);
+      if (currentView === 'admin') {
+        setCurrentView('journal');
+      }
     } catch (err: any) {
       console.error('Failed to create new reflection in Firestore:', err);
     }
@@ -184,6 +207,9 @@ export default function App() {
       {/* Top Navigation */}
       <Navbar
         user={currentUser}
+        currentView={currentView}
+        isAdmin={isAdmin}
+        onToggleAdminView={() => setCurrentView((prev) => (prev === 'admin' ? 'journal' : 'admin'))}
         onSignOut={handleSignOut}
         onNewEntry={handleCreateNewEntry}
         onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
@@ -199,6 +225,11 @@ export default function App() {
           isLoading={isProcessingAuth}
           errorMessage={authError}
           onClearError={() => setAuthError(null)}
+        />
+      ) : currentView === 'admin' && isAdmin && rawAuthUser ? (
+        <AdminDashboard
+          authUser={rawAuthUser}
+          onBackToJournal={() => setCurrentView('journal')}
         />
       ) : (
         <Dashboard
@@ -219,3 +250,4 @@ export default function App() {
     </div>
   );
 }
+
