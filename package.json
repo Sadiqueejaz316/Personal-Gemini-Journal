@@ -9,7 +9,14 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:rules": "tsx scripts/run-rules-tests.ts",
+    "test:rbac": "tsx scripts/run-rbac-tests.ts",
+    "test:mood": "tsx scripts/run-mood-analytics-tests.ts",
+    "test": "npm run test:rbac && npm run test:mood",
+    "audit:deps": "npm audit --audit-level=high",
+    "scan:secrets": "tsx scripts/scan-secrets.ts",
+    "verify": "npm run lint && npm run build && npm run test:rules && npm run test:rbac && npm run test:mood && npm run audit:deps && npm run scan:secrets"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

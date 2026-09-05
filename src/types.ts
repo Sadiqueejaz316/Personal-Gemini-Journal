@@ -30,6 +30,33 @@ export interface AISummary {
   generatedAt?: string;
 }
 
+export type PrimaryMood =
+  | 'joy'
+  | 'calm'
+  | 'sadness'
+  | 'anxiety'
+  | 'anger'
+  | 'stress'
+  | 'neutral';
+
+export interface EmotionScore {
+  name: string;
+  score: number; // 0 to 1
+}
+
+export interface EntryAnalysis {
+  version: number;
+  primaryMood: PrimaryMood;
+  moodScore: number; // -1 to +1
+  intensity: number; // 0 to 1
+  emotions: EmotionScore[];
+  topics: string[];
+  shortSummary: string;
+  reflectionTags: string[];
+  analyzedAt: string;
+  model?: string;
+}
+
 export interface JournalEntry {
   id: string;
   userId: string;
@@ -37,6 +64,9 @@ export interface JournalEntry {
   content: string;
   messages: ChatMessage[];
   summary?: AISummary;
+  analysis?: EntryAnalysis;
+  analysisStatus?: 'pending' | 'completed' | 'failed';
+  analysisError?: string;
   mood?: 'reflective' | 'inspired' | 'grateful' | 'challenging' | 'curious' | 'calm';
   tags?: string[];
   createdAt: string; // ISO string
@@ -109,4 +139,47 @@ export interface MoodAnalytics {
   totalSamples: number;
   updatedAt: string;
 }
+
+export interface MoodTimelinePoint {
+  date: string; // YYYY-MM-DD
+  moodScore: number;
+  primaryMood: PrimaryMood;
+  intensity: number;
+  entryCount: number;
+}
+
+export interface EmotionCount {
+  name: string;
+  score: number;
+  count: number;
+}
+
+export interface TopicCount {
+  topic: string;
+  count: number;
+}
+
+export interface MoodAnalyticsResponse {
+  period: '7d' | '30d' | '90d' | 'all';
+  entryCount: number;
+  analyzedCount: number;
+  averageMoodScore: number;
+  averageIntensity: number;
+  moodDistribution: Record<PrimaryMood, number>;
+  topEmotions: EmotionCount[];
+  topTopics: TopicCount[];
+  timeline: MoodTimelinePoint[];
+  journalingFrequency: {
+    entriesPerWeek: number;
+    currentStreakDays: number;
+    totalDaysInPeriod: number;
+  };
+  latestMood?: {
+    primaryMood: PrimaryMood;
+    moodScore: number;
+    intensity: number;
+    analyzedAt: string;
+  } | null;
+}
+
 

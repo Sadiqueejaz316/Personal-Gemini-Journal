@@ -2,12 +2,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Check if authenticated user has admin privileges
+    // Check if authenticated user has admin privileges via authoritative Custom Claim,
+    // bootstrap admin list, or dynamic user profile document lookup.
+    // NOTE: Email-based admin check intentionally absent — email is mutable and non-cryptographic.
     function isAdmin() {
       return request.auth != null && (
         request.auth.token.admin == true ||
-        (request.auth.token.email != null && request.auth.token.email.lower() == 'mohammad.ejaz3114@gmail.com') ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        request.auth.uid == 'KzwzxQpUN0V2bPA7tiwZyCHKA6Z2' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
       );
     }
 

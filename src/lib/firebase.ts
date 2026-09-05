@@ -29,7 +29,16 @@ import {
   Firestore,
 } from 'firebase/firestore';
 import firebaseConfigJson from '../../firebase-applet-config.json';
-import { JournalEntry, UserProfile, ChatMessage, AdminTelemetry, UserDirectoryItem, MoodAnalytics } from '../types';
+import {
+  JournalEntry,
+  UserProfile,
+  ChatMessage,
+  AdminTelemetry,
+  UserDirectoryItem,
+  MoodAnalytics,
+  EntryAnalysis,
+  MoodAnalyticsResponse,
+} from '../types';
 
 
 // Defensive configuration load
@@ -308,21 +317,13 @@ export async function checkAdminStatus(user: User): Promise<{ isAdmin: boolean; 
   if (!user) return { isAdmin: false, role: 'user' };
 
   try {
-    const adminEmails = [
-      'mohammad.ejaz3114@gmail.com',
-      ...(((import.meta as any).env?.VITE_ADMIN_EMAILS || '') as string).split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean),
-    ];
-    if (user.email && adminEmails.includes(user.email.toLowerCase())) {
-      return { isAdmin: true, role: 'admin' };
-    }
-
-    // 1. Check token result custom claims
+    // 1. Check verified Firebase Auth ID Token custom claim (claims.admin === true)
     const tokenResult = await user.getIdTokenResult(true);
     if (tokenResult.claims && tokenResult.claims.admin === true) {
       return { isAdmin: true, role: 'admin' };
     }
 
-    // 2. Query backend verification route (supports bootstrap ADMIN_UIDS)
+    // 2. Query backend verification route (supports optional server-side bootstrap ADMIN_UIDS)
     const token = await user.getIdToken();
     const response = await fetch('/api/admin/verify', {
       method: 'GET',
@@ -352,6 +353,8 @@ export async function fetchAdminTelemetry(user: User): Promise<AdminTelemetry> {
   const response = await fetch('/api/admin/telemetry', {
     headers: {
       Authorization: `Bearer ${token}`,
+      'x-user-role': 'admin',
+      'x-admin-uid': user.uid,
     },
   });
 
@@ -421,10 +424,14 @@ export const DEFAULT_SEED_USERS: UserDirectoryItem[] = [
  * Fetch Admin User Directory (Strictly metadata, zero journal text)
  * Automatically ensures sample users exist in Firestore so the directory is fully populated.
  */
+/**
+ * Fetch Admin User Directory (Strictly metadata, zero journal text)
+ * Prioritizes authoritative server state and synchronizes with Firestore.
+ */
 export async function fetchAdminUserDirectory(user: User): Promise<UserDirectoryItem[]> {
   const usersMap = new Map<string, UserDirectoryItem>();
 
-  // Ensure current user is mapped first
+  // Ensure current admin is mapped first
   const currentAdminItem: UserDirectoryItem = {
     uid: user.uid,
     email: user.email,
@@ -437,33 +444,14 @@ export async function fetchAdminUserDirectory(user: User): Promise<UserDirectory
   };
   usersMap.set(user.uid, currentAdminItem);
 
-  // 1. Fetch from Firestore /users collection
-  try {
-    const usersCol = collection(db, 'users');
-    const snapshot = await getDocs(usersCol);
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      usersMap.set(docSnap.id, {
-        uid: docSnap.id,
-        email: data.email || null,
-        displayName: data.displayName || (data.email ? data.email.split('@')[0] : 'Mindful Author'),
-        createdAt: data.createdAt || data.lastLoginAt || new Date().toISOString(),
-        lastLoginAt: data.lastLoginAt || null,
-        entryCount: typeof data.entryCount === 'number' ? data.entryCount : 0,
-        role: data.role === 'admin' ? 'admin' : 'user',
-        status: data.status === 'inactive' ? 'inactive' : 'active',
-      });
-    });
-  } catch (clientErr) {
-    console.warn('[Admin] Firestore getDocs notice:', clientErr);
-  }
-
-  // 2. Also check backend API endpoint for any additional server-discovered accounts
+  // 1. Fetch authoritative server user directory
   try {
     const token = await user.getIdToken();
     const response = await fetch('/api/admin/users', {
       headers: {
         Authorization: `Bearer ${token}`,
+        'x-user-role': 'admin',
+        'x-admin-uid': user.uid,
       },
     });
 
@@ -471,9 +459,7 @@ export async function fetchAdminUserDirectory(user: User): Promise<UserDirectory
       const data = await response.json();
       if (Array.isArray(data.users)) {
         data.users.forEach((u: UserDirectoryItem) => {
-          if (!usersMap.has(u.uid)) {
-            usersMap.set(u.uid, u);
-          }
+          usersMap.set(u.uid, u);
         });
       }
     }
@@ -481,18 +467,36 @@ export async function fetchAdminUserDirectory(user: User): Promise<UserDirectory
     console.warn('[Admin] Server user directory route notice:', err);
   }
 
-  // 3. If directory has only 1 user (or only current admin), auto-seed demo authors to Firestore
+  // 2. Supplement with any additional Firestore /users documents
+  try {
+    const usersCol = collection(db, 'users');
+    const snapshot = await getDocs(usersCol);
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      // Only add if not already present or if updating details
+      const existing = usersMap.get(docSnap.id);
+      if (!existing) {
+        usersMap.set(docSnap.id, {
+          uid: docSnap.id,
+          email: data.email || null,
+          displayName: data.displayName || (data.email ? data.email.split('@')[0] : 'Mindful Author'),
+          createdAt: data.createdAt || data.lastLoginAt || new Date().toISOString(),
+          lastLoginAt: data.lastLoginAt || null,
+          entryCount: typeof data.entryCount === 'number' ? data.entryCount : 0,
+          role: data.role === 'admin' ? 'admin' : 'user',
+          status: data.status === 'inactive' ? 'inactive' : 'active',
+        });
+      }
+    });
+  } catch (clientErr) {
+    console.warn('[Admin] Firestore getDocs notice:', clientErr);
+  }
+
+  // 3. Fallback to default community authors if directory is completely empty
   if (usersMap.size <= 1) {
     for (const seedItem of DEFAULT_SEED_USERS) {
       if (!usersMap.has(seedItem.uid)) {
         usersMap.set(seedItem.uid, seedItem);
-        // Persist seed item to Firestore asynchronously with defensive hygiene
-        try {
-          const userRef = doc(db, 'users', seedItem.uid);
-          await setDoc(userRef, cleanPayloadForFirestore(seedItem), { merge: true });
-        } catch (saveErr) {
-          console.warn('[Admin] Auto-seed user notice:', saveErr);
-        }
       }
     }
   }
@@ -506,10 +510,14 @@ export async function fetchAdminUserDirectory(user: User): Promise<UserDirectory
 export async function seedAdminDirectory(user: User): Promise<UserDirectoryItem[]> {
   for (const seedItem of DEFAULT_SEED_USERS) {
     try {
-      const userRef = doc(db, 'users', seedItem.uid);
-      await setDoc(userRef, cleanPayloadForFirestore(seedItem), { merge: true });
+      await adminCreateUser(user, {
+        displayName: seedItem.displayName,
+        email: seedItem.email || `${seedItem.uid}@mindful.org`,
+        role: seedItem.role,
+        entryCount: seedItem.entryCount,
+      });
     } catch (err) {
-      console.warn('Error seeding user to Firestore:', err);
+      console.warn('Error seeding user:', err);
     }
   }
   return fetchAdminUserDirectory(user);
@@ -527,41 +535,97 @@ export async function adminCreateUser(
     entryCount?: number;
   }
 ): Promise<UserDirectoryItem> {
-  const generatedUid = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const item: UserDirectoryItem = {
-    uid: generatedUid,
-    email: newUser.email.trim().toLowerCase(),
-    displayName: newUser.displayName.trim(),
-    createdAt: new Date().toISOString(),
-    lastLoginAt: new Date().toISOString(),
-    entryCount: newUser.entryCount || 0,
-    role: newUser.role,
-    status: 'active',
-  };
+  const token = await adminUser.getIdToken();
+  const response = await fetch('/api/admin/users', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      'x-user-role': 'admin',
+      'x-admin-uid': adminUser.uid,
+    },
+    body: JSON.stringify(newUser),
+  });
 
-  const userRef = doc(db, 'users', generatedUid);
-  await setDoc(userRef, cleanPayloadForFirestore(item));
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || `Failed to create author profile (HTTP ${response.status})`);
+  }
+
+  const data = await response.json();
+  const item: UserDirectoryItem = data.user;
+
+  // Also sync to Firestore for client document availability
+  try {
+    const userRef = doc(db, 'users', item.uid);
+    await setDoc(userRef, cleanPayloadForFirestore(item), { merge: true });
+  } catch (fsErr) {
+    console.warn('[Admin] Firestore profile write note:', fsErr);
+  }
+
   return item;
 }
 
 /**
- * Admin Action: Update User Role in Directory
+ * Admin Action: Update User Role in Directory (Make Admin / Demote to User)
  */
 export async function adminUpdateUserRole(
   adminUser: User,
   targetUid: string,
   newRole: 'admin' | 'user'
 ): Promise<void> {
-  const userRef = doc(db, 'users', targetUid);
-  await updateDoc(userRef, { role: newRole });
+  const token = await adminUser.getIdToken();
+  const response = await fetch(`/api/admin/users/${encodeURIComponent(targetUid)}/role`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      'x-user-role': 'admin',
+      'x-admin-uid': adminUser.uid,
+    },
+    body: JSON.stringify({ role: newRole }),
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || `Failed to update author role (HTTP ${response.status})`);
+  }
+
+  // Also sync to Firestore for client document availability
+  try {
+    const userRef = doc(db, 'users', targetUid);
+    await setDoc(userRef, { role: newRole, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (fsErr) {
+    console.warn('[Admin] Firestore role write note:', fsErr);
+  }
 }
 
 /**
  * Admin Action: Remove / Archive User Profile from Directory
  */
 export async function adminDeleteUser(adminUser: User, targetUid: string): Promise<void> {
-  const userRef = doc(db, 'users', targetUid);
-  await deleteDoc(userRef);
+  const token = await adminUser.getIdToken();
+  const response = await fetch(`/api/admin/users/${encodeURIComponent(targetUid)}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'x-user-role': 'admin',
+      'x-admin-uid': adminUser.uid,
+    },
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || `Failed to delete author profile (HTTP ${response.status})`);
+  }
+
+  // Also sync delete to Firestore
+  try {
+    const userRef = doc(db, 'users', targetUid);
+    await deleteDoc(userRef);
+  } catch (fsErr) {
+    console.warn('[Admin] Firestore delete note:', fsErr);
+  }
 }
 
 /**
@@ -572,6 +636,8 @@ export async function fetchAdminMoodAnalytics(user: User): Promise<MoodAnalytics
   const response = await fetch('/api/admin/moods', {
     headers: {
       Authorization: `Bearer ${token}`,
+      'x-user-role': 'admin',
+      'x-admin-uid': user.uid,
     },
   });
 
@@ -584,4 +650,95 @@ export async function fetchAdminMoodAnalytics(user: User): Promise<MoodAnalytics
   const data = await response.json();
   return data.moods;
 }
+
+/**
+ * Trigger Server-side Structured Entry Analysis using Gemini
+ * Analyzes the entry, extracts sentiment, emotions, topics, tags, and updates Firestore document
+ */
+export async function triggerEntryAnalysis(
+  entryId: string,
+  title: string,
+  content: string
+): Promise<EntryAnalysis | null> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error('User must be authenticated to analyze entry.');
+
+  const token = await currentUser.getIdToken();
+  const response = await fetch('/api/entries/analyze', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ entryId, title, content }),
+  });
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const rawText = await response.text().catch(() => '');
+    throw new Error(`Server returned non-JSON response (${response.status}): ${rawText.slice(0, 120)}`);
+  }
+
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || `Analysis failed with status ${response.status}`);
+  }
+
+  return result.analysis || null;
+}
+
+/**
+ * Fetch Private User Mood Analytics
+ * Aggregates only the authenticated user's private reflections
+ */
+export async function fetchUserMoodAnalytics(
+  range: '7d' | '30d' | '90d' | 'all' = '7d',
+  clientEntries?: JournalEntry[]
+): Promise<MoodAnalyticsResponse> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error('User must be authenticated to view mood analytics.');
+
+  const token = await currentUser.getIdToken();
+
+  // If client entries are provided, send via POST to leverage server deterministic aggregation
+  if (Array.isArray(clientEntries) && clientEntries.length > 0) {
+    try {
+      const response = await fetch('/api/analytics/mood', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ range, entries: clientEntries }),
+      });
+
+      const contentType = response.headers.get('content-type') || '';
+      if (response.ok && contentType.includes('application/json')) {
+        return await response.json();
+      }
+    } catch (postErr) {
+      console.warn('[Analytics] POST analytics computation failed, falling back to GET:', postErr);
+    }
+  }
+
+  const response = await fetch(`/api/analytics/mood?range=${range}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const rawText = await response.text().catch(() => '');
+    throw new Error(`Server returned non-JSON response (${response.status}): ${rawText.slice(0, 120)}`);
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || `Failed to fetch mood analytics with status ${response.status}`);
+  }
+
+  return data;
+}
+
 

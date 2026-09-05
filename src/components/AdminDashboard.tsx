@@ -69,6 +69,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // User Directory Management State
   const [isSeeding, setIsSeeding] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<UserDirectoryItem | null>(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
+  const [updatingRoleUid, setUpdatingRoleUid] = useState<string | null>(null);
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [actionNotification, setActionNotification] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [newUserForm, setNewUserForm] = useState({
     displayName: '',
@@ -104,6 +108,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return;
     }
 
+    setIsCreatingUser(true);
     try {
       const created = await adminCreateUser(authUser, newUserForm);
       setUsers((prev) => [created, ...prev.filter((u) => u.uid !== created.uid)]);
@@ -112,11 +117,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       showNotification('success', `Created author profile for "${created.displayName}".`);
     } catch (err: any) {
       showNotification('error', err.message || 'Failed to create user profile.');
+    } finally {
+      setIsCreatingUser(false);
     }
   };
 
   const handleToggleRole = async (targetUser: UserDirectoryItem) => {
     const newRole = targetUser.role === 'admin' ? 'user' : 'admin';
+    setUpdatingRoleUid(targetUser.uid);
     try {
       await adminUpdateUserRole(authUser, targetUser.uid, newRole);
       setUsers((prev) =>
@@ -125,24 +133,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       showNotification('success', `Updated ${targetUser.displayName || 'user'} role to ${newRole.toUpperCase()}.`);
     } catch (err: any) {
       showNotification('error', err.message || 'Failed to update user role.');
+    } finally {
+      setUpdatingRoleUid(null);
     }
   };
 
-  const handleDeleteUser = async (targetUser: UserDirectoryItem) => {
-    if (targetUser.uid === authUser.uid) {
+  const confirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    if (userToDelete.uid === authUser.uid) {
       showNotification('error', 'Cannot remove your own active administrator account.');
-      return;
-    }
-    if (!window.confirm(`Are you sure you want to remove ${targetUser.displayName || targetUser.email} from the directory?`)) {
+      setUserToDelete(null);
       return;
     }
 
+    setIsDeletingUser(true);
     try {
-      await adminDeleteUser(authUser, targetUser.uid);
-      setUsers((prev) => prev.filter((u) => u.uid !== targetUser.uid));
-      showNotification('success', `Removed ${targetUser.displayName || 'user'} from directory.`);
+      await adminDeleteUser(authUser, userToDelete.uid);
+      setUsers((prev) => prev.filter((u) => u.uid !== userToDelete.uid));
+      showNotification('success', `Removed ${userToDelete.displayName || userToDelete.email || 'author'} from directory.`);
+      setUserToDelete(null);
     } catch (err: any) {
       showNotification('error', err.message || 'Failed to delete user.');
+    } finally {
+      setIsDeletingUser(false);
     }
   };
 
@@ -927,13 +940,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <div className="inline-flex items-center gap-1.5">
                                 <button
                                   onClick={() => handleToggleRole(u)}
-                                  className="px-2 py-1 rounded text-[10px] font-medium bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 transition-colors"
+                                  disabled={updatingRoleUid === u.uid}
+                                  className="px-2 py-1 rounded text-[10px] font-medium bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 transition-colors disabled:opacity-50"
                                   title={u.role === 'admin' ? 'Demote to Standard User' : 'Promote to Admin'}
                                 >
-                                  {u.role === 'admin' ? 'Demote to User' : 'Make Admin'}
+                                  {updatingRoleUid === u.uid ? 'Updating...' : u.role === 'admin' ? 'Demote to User' : 'Make Admin'}
                                 </button>
                                 <button
-                                  onClick={() => handleDeleteUser(u)}
+                                  onClick={() => setUserToDelete(u)}
                                   className="p-1 rounded text-stone-500 hover:text-rose-400 hover:bg-rose-950/30 transition-colors"
                                   title="Delete profile metadata"
                                 >
@@ -1028,18 +1042,62 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowAddUserModal(false)}
-                        className="px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs transition-colors"
+                        disabled={isCreatingUser}
+                        className="px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs transition-colors disabled:opacity-50"
                       >
                         Cancel
                       </button>
                       <button
                         type="submit"
-                        className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-stone-950 font-semibold text-xs transition-colors"
+                        disabled={isCreatingUser}
+                        className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-stone-950 font-semibold text-xs transition-colors disabled:opacity-50"
                       >
-                        Create Profile
+                        {isCreatingUser ? 'Creating...' : 'Create Profile'}
                       </button>
                     </div>
                   </form>
+                </div>
+              </div>
+            )}
+
+            {/* Modal: Delete Author Confirmation */}
+            {userToDelete && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+                <div className="w-full max-w-sm bg-stone-900 border border-stone-800 rounded-xl p-6 shadow-2xl space-y-4">
+                  <div className="flex items-center gap-3 text-rose-400">
+                    <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20">
+                      <Trash2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-stone-100">Remove Author Profile</h4>
+                      <p className="text-xs text-stone-400 mt-0.5">Account Governance Action</p>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-stone-300 leading-relaxed">
+                    Are you sure you want to remove <strong className="text-stone-100">{userToDelete.displayName || userToDelete.email}</strong> from the directory?
+                    This will remove their profile and administrative governance metadata.
+                  </p>
+
+                  <div className="pt-2 flex items-center justify-end gap-2 border-t border-stone-800">
+                    <button
+                      type="button"
+                      onClick={() => setUserToDelete(null)}
+                      disabled={isDeletingUser}
+                      className="px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs transition-colors disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmDeleteUser}
+                      disabled={isDeletingUser}
+                      className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{isDeletingUser ? 'Removing...' : 'Remove Author'}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
