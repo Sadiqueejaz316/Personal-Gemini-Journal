@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 # Stage 1: builder
 # Install ALL dependencies and build the application
 # ============================================================
@@ -13,9 +13,9 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 
 # Copy source files required for the build.
-# firebase-applet-config.json contains only public Firebase Web SDK config
-# (apiKey is intentionally public, protected by Firestore Security Rules)
-COPY firebase-applet-config.json ./
+COPY firebase-applet-config*.json ./
+RUN if [ ! -f firebase-applet-config.json ]; then cp firebase-applet-config.json.example firebase-applet-config.json; fi
+
 COPY index.html ./
 COPY vite.config.ts ./
 COPY tsconfig.json ./
@@ -48,12 +48,11 @@ RUN npm ci --omit=dev --ignore-scripts
 # Copy built artifacts from the builder stage
 COPY --from=builder /app/dist ./dist
 
-# Copy public Firebase Web SDK config (intentionally public, needed at runtime
-# by server.ts to resolve firestoreDatabaseId and Firebase project config)
-COPY firebase-applet-config.json ./
+# Copy public Firebase Web SDK config
+COPY firebase-applet-config*.json ./
+RUN if [ ! -f firebase-applet-config.json ]; then cp firebase-applet-config.json.example firebase-applet-config.json; fi
 
 # Cloud Run injects PORT at runtime; default to 3000 for local testing.
-# server.ts reads: parseInt(process.env.PORT || '3000', 10)
 EXPOSE 3000
 
 # Start the compiled production server
