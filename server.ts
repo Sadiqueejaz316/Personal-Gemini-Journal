@@ -11,7 +11,7 @@ import firebaseConfigJson from './firebase-applet-config.json';
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // 1. Top-Level Request Deserialization (Ordering Guarantee)
 app.use(express.json({ limit: '10mb' }));
@@ -445,13 +445,14 @@ export function validateEntryAnalysis(data: any): { valid: boolean; error?: stri
 // PUBLIC & USER API ROUTES
 // ==========================================
 
-// Health Check
+// Health Check — returns minimal payload; no secrets or configuration details exposed
 app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    aiConfigured: Boolean(process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY),
-  });
+  res.status(200).json({ status: 'ok' });
+});
+
+// Alias without /api prefix for Cloud Run default health check probe
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
 });
 
 // Multi-turn Conversational Reflection with Gemini

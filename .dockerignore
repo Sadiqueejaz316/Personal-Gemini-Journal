@@ -1,0 +1,39 @@
+﻿# Secrets and local environment - NEVER include in image
+.env
+.env.*
+!.env.example
+
+# Git history
+.git
+.gitignore
+
+# Node modules (rebuilt inside Docker by npm ci)
+node_modules
+
+# Previous build output (rebuilt inside Docker by npm run build)
+dist
+
+# Test output and coverage
+coverage
+*.log
+*.test.ts
+
+# Firebase service account keys and credential files - NEVER in image
+*service-account*.json
+*service_account*.json
+*credentials*.json
+*credential*.json
+*keyfile*.json
+
+# IDE config
+.vscode
+
+# Agent skills and workspace tooling (not needed at runtime)
+.agents
+.antigravity
+
+# Test harness scripts (not needed at runtime)
+scripts
+
+# macOS artifacts
+.DS_Store
